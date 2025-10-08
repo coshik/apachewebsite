@@ -1,39 +1,48 @@
 pipeline {
     agent any
-    stages{
-        stage('git cloned'){
-            steps{
-                git url:'https://github.com/coshik/apachewebsite/', branch: "master"
-              
+      environment {
+        DOCKER_IMAGE = 'anirudev/apachewebsite:latest'
+        KUBECONFIG = credentials('kubeconfig')
+    }
+
+    stages {
+        stage('Clone Git repository') {
+            steps {
+                 git 'https://github.com/RaksAniruddha/apachewebsite.git'
             }
         }
-        stage('Build docker image'){
-            steps{
-                script{
-                    sh 'docker build -t coshik/akshatnewimg6july:v1 .'
-                    sh 'docker images'
+        stage('run ansibleplaybook'){
+          steps{
+            ansiblePlaybook credentialsId: 'ansible-ssh', installation: 'ansible2', inventory: 'inventory.ini', playbook: 'installapche.yml', vaultTmpPath: ''
+          }
+        }
+       stage('Docker Build & Push') {
+        steps {
+            script {
+                withDockerRegistry([credentialsId: 'docker', url: 'https://index.docker.io/v1/']) {
+                    sh '''
+                    echo "Building Docker image..."
+                    docker build --no-cache -t $DOCKER_IMAGE -f Dockerfile .
+                    echo "Pushing Docker image to Docker Hub..."
+                    docker push $DOCKER_IMAGE
+                    '''
+                    }
                 }
             }
         }
-          stage('Docker login') {
+        stage('Deploy to Kubernetes') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-pwd', passwordVariable: 'PASS', usernameVariable: 'USER')]) {
-                    sh "echo $PASS | docker login -u $USER --password-stdin"
-                    sh 'docker push coshik/akshatnewimg6july:v1'
-                }
-            }
-        }
-        
-     stage('Deploy') {
-            steps {
-               script {
-                   def dockerrm = 'sudo docker rm -f My-first-containe2211 || true'
-                    def dockerCmd = 'sudo docker run -itd --name My-first-containe2211 -p 8083:80 coshik/akshatnewimg6july:v1'
-                    sshagent(['sshkeypair']) {
-                        //chnage the private ip in below code
-                        // sh "docker run -itd --name My-first-containe2111 -p 8083:80 akshu20791/2febimg:v1"
-                         sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.13.249 ${dockerrm}"
-                         sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.13.249 ${dockerCmd}"
+                script {
+                    withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+                        sh '''
+                        echo "Deploying to Kubernetes..."
+                        export KUBECONFIG=$KUBECONFIG_FILE
+
+                        kubectl apply -f deployment.yml
+                        kubectl apply -f service.yml
+
+                        echo "Deployment and Service applied successfully!"
+                        '''
                     }
                 }
             }
