@@ -8,7 +8,7 @@ pipeline {
     stages {
         stage('Clone Git repository') {
             steps {
-                 git 'https://github.com/RaksAniruddha/apachewebsite.git'
+                 git 'https://github.com/coshik/apachewebsite.git'
             }
         }
         stage('run ansibleplaybook'){
